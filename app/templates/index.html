@@ -1,0 +1,560 @@
+<link href="https://code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css" rel="stylesheet" type="text/css" />
+<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+<script src="https://code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+<!DOCTYPE html5>
+<meta charset="utf-8">
+<html>
+<style>
+.node {
+    stroke: #fff;
+    stroke-width: 1.5px;
+    fill: steelblue;
+}
+.link {
+    stroke: #999;
+    stroke-opacity: .5;
+	stroke-width: 2px;
+	
+}
+text {
+	font: 12px sans-serif;
+	pointer-events: none;
+	text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;
+}
+div.tooltip{
+	position: absolute;			
+    text-align: left;			
+    padding: 5px;				
+    font: 15px sans-serif;		
+    background: lightsteelblue;	
+    border: 2px;		
+    border-radius: 8px;		
+	overflow-y: auto;
+}
+
+div.logger{
+	position: absolute;			
+    text-align: left;			
+    padding: 5px;				
+    font: 15px sans-serif;		
+    background: lightsteelblue;	
+    border: 2px;		
+    border-radius: 8px;		
+	overflow-y: auto;
+}
+</style>
+<body>
+<div class="ui-widget">
+   <input id="search">
+    <button type="button" onclick="searchNode()">Search</button>
+</div>
+<div class="nodelogger">
+	<button id="startLog" onclick="startLogging()">Start Logging</button>
+	<button id="stopLog" onclick="stopLogging()">Stop Logging</button>
+</div>
+
+<form id='forpath'>
+	<input id="source" placeholder="Source" name='source'>
+	<input id="target" placeholder="Target" name='target'>
+	<button type="submit">Find all Paths</button>
+</form>
+
+<div class="refreshPages">
+	<button id="refresh" onclick="refresh()">Refresh</button>
+</div>
+
+<script src="https://d3js.org/d3.v3.min.js"></script>
+<script type='text/javascript' src="http://code.jquery.com/ui/1.11.0/jquery-ui.min.js"> </script>
+<script type='text/javascript' src="http://code.jquery.com/ui/1.11.0/themes/smoothness/jquery-ui.css"> </script>
+<script src="https://d3js.org/d3.v3.min.js"></script>
+<script>
+
+// this is the ajax part which on submit button click will send the source and target names to the flask app
+$('form#forpath').on('submit', function(event){
+	$.ajax({
+		data:{
+			source:$('#source').val(),
+			target:$('#target').val()
+		},
+		type:'POST',
+		url:'/paths'
+	})
+	.done(function(pathData){
+		// check if any error is there in the returned data
+		if(pathData.error){
+			$('#errorAlert').text(pathData.error).show();
+		}
+		else{
+			node.style("opacity",0.05);
+			text.style("opacity",0.05);
+			//for every nodes returned do some action
+			pathData.nodes.forEach(function(n){
+				var nodeSelected = node.filter(function(d,i){
+					return n.id == d.index;
+				});
+				// keep the opacity of all the required nodes 1 and else 0.05
+				nodeSelected.style("opacity","1");
+				nodeSelected.style("fill","red");
+				// take the corresponding text to nodes
+				var textSelected = text.filter(function(d,i){
+					return n.id == d.index;
+				});
+				textSelected.style("opacity","1");
+			});
+			//keep the opacity of all link 0.05
+			link.style("opacity",0.05);
+			pathData.links.forEach(function(l){
+				var linkSelected = link.filter(function(d,i){
+					return l.source == d.source.index & l.target == d.target.index;
+				});
+				//make the required links opacity 1
+				linkSelected.style("opacity","1");
+				linkSelected.style("stroke","blue");
+			});
+
+			var sourceSel = node.filter(function (d, i) {
+				s = document.getElementById('source').value;
+				return d.functions == s;
+			});
+
+			var targetSel = node.filter(function (d, i) {
+				t = document.getElementById('target').value;
+				return d.functions == t;
+			});
+
+			sourceSel.style("fill","green");
+			targetSel.style("fill","green");
+		}
+	});
+	event.preventDefault();
+});
+	
+
+// this is the data or the main json node link graph
+var data = {{ data.graphData | safe }}
+
+//define the margin height width 
+var margin = {top:-5, bottom:-5, right:-5, left:-5};
+var width = window.innerWidth/2 - margin.right - margin.left;
+var height = window.innerHeight - margin.top - margin.bottom;
+	
+// define the d3 zoom 
+var zoom = d3.behavior.zoom()
+.scaleExtent([0.1,10])
+.on("zoom", zoomed);
+
+// define an svg with required height width and zoom parameters
+var svg = d3.select("body").append("svg")
+.attr("height", height + margin.top + margin.bottom)
+.attr("width", width + margin.right + margin.left)
+.append("g").attr("transform","translate("+margin.left+","+margin.right+")")
+.call(zoom)
+//do no actions on dblclick of svg
+.on("dblclick.zoom",null);
+
+//define the rect area to display the graph
+var rect = svg.append("rect")
+.attr("height",height)
+.attr("width", width)
+.style("pointer-events", "all")
+.style("fill","none")
+.style("border-width", "2px")
+
+var container = svg.append("g");
+
+function searchNode() {
+	//find the node
+	//store the node to be searched in a variable
+	var selectedVal = document.getElementById('search').value;
+	var node = container.selectAll(".node");
+	var text = container.selectAll("text");
+	if (selectedVal == "none") {
+		//although if no node found show some effect
+		node.style("stroke", "white").style("stroke-width", "1");
+	} 
+	else {
+		//select all other than the selected node
+		var selected = node.filter(function (d, i) {
+			return d.functions != selectedVal;
+		});
+		var selectedText = text.filter(function(d,i){
+			return d.text != selectedVal;
+		});
+
+		//show some effect to the nodes not searched
+		selected.style("opacity", "0");
+		selectedText.style("opacity", "0");
+		var link = container.selectAll(".link");
+		link.style("opacity", "0");
+		
+		//center the graph back to the position of the searched node
+		var selectedNode = node.filter(function(d,i){
+			if(d.functions == selectedVal){
+                //var t = d3.
+                svg.call(zoom.event);
+                zoom.translate([(window.innerWidth/4-d.x),(window.innerHeight/2-d.y)]);
+                zoom.scale(1)
+                container.attr("transform","translate("+ (-d.x+window.innerWidth/4)+","+(-d.y+window.innerHeight/2)+")scale(1)");
+              
+			}
+		})
+		
+		//do some transistion effect with text and node
+		d3.selectAll(".node, text").transition()
+			.duration(2500)
+			.style("opacity", .5);
+			
+		d3.selectAll(".link").transition()
+			.duration(2000)
+			.style("opacity",1);
+	}
+}
+
+
+// this is the element defined for the side pannel
+var div = 	d3.select("body").append("div")
+			.attr("class","tooltip")
+			.style("opacity",0);
+			
+// this is the element defined for the another side pannel for logging the nodes			
+var log = d3.select("body").append("div")
+.attr("class", "logger")
+.style("opacity", 0);
+
+function zoomed(){
+	container.attr("transform","translate("+d3.event.translate+")scale("+d3.event.scale+")");
+    //console.log("zoom: ",d3.event.translate, d3.event.scale);
+}
+
+// this part is related to logging of node while traversing graph
+var nodeLogStack = [];
+var logStatus = false;
+
+// called when user presses the Start Logging button
+function startLogging(){
+	// initate some variables
+	logStatus = true;
+	nodeLogStack = [];
+}
+
+// called when user presses the Stop Logging button
+function stopLogging(){
+	// set the status False
+	logStatus = false;
+	//nodeLogStack = [];
+}
+
+// after stop logging the graph is refreshed such that all elements are set to defaults (initial value)
+function refresh(){
+	node.style("opacity", 1);
+	node.style("fill","steelblue");
+	link.style("opacity", .5);
+	text.style("opacity", 1);
+	link.style("stroke","#999");
+}
+
+// define nodes and links
+var nodes = data["nodes"];
+var links = data["links"];
+
+// this is to define the d3 instance for force simulation
+var myforce = d3.layout.force();
+
+//inititaing the force simulation of the nodes
+myforce.nodes(d3.values(data["nodes"]))
+.links(data["links"])
+.linkDistance("220")
+.size([width + margin.right + margin.left, height + margin.top + margin.bottom])
+.charge("-1000")
+// end is the function which is called after the simulation is done
+// after simulation is done each node is assigned with a coordinate and then they remain fix over there
+.on("end", end)
+.start();
+
+//this is to define the links 
+var link = container.append("g")
+.attr("class","links").selectAll(".link")
+.data(myforce.links()).enter()
+.append("line")
+.attr("class", "link")
+.style("opacity","0.5")
+// arrow is used at the end of link towards target side
+.style("marker-end",  "url(#arrow)");
+
+// this is to define the text or the function name to be displayed along with the nodes
+var text = container
+.selectAll("text")
+.data(myforce.nodes()).enter()
+.append("text")
+.text(function(d) { return d.functions; })
+
+
+// this is to define the nodes which are circles of radius 8 
+var node = container.append("g")
+.attr("class","nodes").selectAll(".node")
+.data(myforce.nodes()).enter()
+.append("circle")
+.attr("class","node")
+.attr("r", 8)
+// this dblclick event triggers the connectedNodes function to call 
+.on('dblclick', connectedNodes);
+
+
+// this is to define the arrow at the end of links
+container.append("defs").selectAll("marker")
+.data(["end"])
+.enter().append("marker")
+// the id of the element is "arrow"
+.attr("id", "arrow")
+.attr("viewBox", "0 -5 10 10")
+.attr("refX", 25)
+.attr("refY", 0)
+.attr("markerWidth", 6)
+.attr("markerHeight", 6)
+.attr("orient", "auto")
+.append("path")
+.attr("d", "M0,-5L10,0L0,5 L10,0 L0, -5")
+.style("stroke", "#4679BD")
+.style("opacity", "0.8");
+
+
+// function is called at the end of simulation to assign coordinates to nodes, links, and texts elements
+function end(e){
+	// link is associated with x and y coordinates of source and target
+	link.attr("x1",function(d){ return d.source.x; })
+	.attr("y1", function(d){ return d.source.y; })
+	.attr("x2", function(d){ return d.target.x; })
+	.attr("y2", function(d){ return d.target.y; });
+	
+	// node is associated with x and y coordinates
+	node.attr("cx", function(d){ return d.x; })
+	.attr("cy", function(d){return d.y;});
+	
+	// node is associated with x and y coordinates
+	text.attr("x", function(d){ return d.x+10;})
+	.attr("y", function(d){return d.y+2;});
+}
+
+
+// optArray is maintained to store the names of functions
+var optArray = [];
+for (var i = 0; i < data["nodes"].length - 1; i++) {
+	optArray.push(data["nodes"][i].functions);
+}
+
+//sorts the array optArray
+optArray = optArray.sort();
+
+// this ajax function are responsible for auto complete feature added in the search box
+$(function () {
+	$("#search").autocomplete({
+		source: optArray
+	});
+});
+
+// this ajax function are responsible for auto complete feature added in the search box
+$(function () {
+	$("#source").autocomplete({
+		source: optArray
+	});
+});
+
+// this ajax function are responsible for auto complete feature added in the search box
+$(function () {
+	$("#target").autocomplete({
+		source: optArray
+	});
+});
+
+// set and flag 
+var toggle = 0;
+
+//Create an dictionary to store the nodes which are linked
+var linkedByIndex = {};
+for (i = 0; i < data["nodes"].length; i++) {
+	linkedByIndex[i + "," + i] = 1;
+}
+
+// fill up the dictionary linkedByIndex
+links.forEach(function (d) {
+	linkedByIndex[d.source.index + "," + d.target.index] = 1;
+});
+
+//This function looks up whether a pair are neighbours  
+function neighboring(a, b) {
+	return linkedByIndex[a.index + "," + b.index];
+}
+
+// this functions return the index of object present in the array arr
+// if not present return -1
+function include(arr, obj){
+	return arr.indexOf(obj);
+}
+
+// connectedNodes is called when the nodes are twice clicked
+// now first when the nodes are clicked the fucntion reduces the opacity of all 
+// elements other than the nodes and its neighbors to negligible
+// second time the node is clicked the flag status toggles all things back and the opacity
+// is changed to normal for all the elements
+function connectedNodes() {
+	// initially the node is clicked and toggle is 0
+	if (toggle == 0) {
+		//Reduce the opacity of all but the neighbouring nodes
+
+		// selects the elements which is clicked
+		d = d3.select(this).node().__data__;
+
+		//reduces the opacity of all elements which are not connected with the element d to 0.1
+		node.style("opacity", function (o) {
+			return neighboring(d, o) | neighboring(o, d) ? 1 : 0.1;
+		});
+		
+		// reduces the opacity of all links which are not connected with the element d to 0.1
+		link.style("opacity", function (o) {
+			return d.index==o.source.index | d.index==o.target.index ? 1 : 0.1;
+		});
+		
+		// changes the in bound links to red and the out bound links to green and rest to gray
+		link.style("stroke", function(o){
+			if(d.index==o.source.index){
+				return "green";
+			}
+			else if (d.index==o.target.index){
+				return "red";
+			}
+			else{
+				return "#999";
+			}
+			});
+		
+		// reduces the opacity of the text to 0.1
+		text.style("opacity", function (o) {
+			return neighboring(d, o) | neighboring(o, d) ? 1 : 0.1;
+		});
+		// change the toggle status
+		// which means next time the node is clicked, the color attribute of graph will change to defaults
+		toggle = 1;
+
+		// this is the function description panel that will be displayed in the right side of the screen
+		div.transition()		
+			.duration(200)		
+			.style("opacity", .9);		
+
+		// 
+		div.style("right", "10px")		
+			.style("top", "50px")
+			.style("height", window.innerHeight *0.9)
+			.style("width", window.innerWidth/5);
+		
+		// to add information into the div elements 
+		var info = "Function Description</br>";
+		// display the functions
+		info += d.functions+"</br>";
+		//display the descriptions
+		info += d.description+"</br>";
+		// display the in degree count
+		info += "Dependants (Count:"+d.inDegree+")</br><li>";
+		// display the in degree names
+		d.dependants.forEach(function(dep){
+		  info+="<ol>"+dep+"</ol>"
+		});
+		//display the out degree count
+		info+="</li>"+"Dependencies (Count:"+d.outDegree+")</br><li>";
+		//display the out degree names
+		d.dependencies.forEach(function(depc){
+			info+="<ol>"+depc+"</ol>"
+		})
+		
+		info+="</li>";
+		// add info into div element
+		div.html(info);
+		
+		// logstatus is related to the logging of the nodes
+		// is logstatus is set to 1 then the nodes which are double clicked are stored in the nodeLogStack stack
+		// this is set and reset from the StartLogging and StopLogging functions defined for corresponding buttons
+		if(logStatus){
+			// selects the element which is double clicked
+			var d = d3.select(this).node().__data__;
+			var textToLog = "";
+
+			//check if clicked node is already present in the stack
+			preIdx = include(nodeLogStack, d.functions);
+			if(preIdx != -1){
+				//if the node clicked was just clicked one step ago then, remove that from the log
+				//at a time one node can have max 2 red nodes
+				// if(preIdx == (nodeLogStack.length - 1)) && (preIdx == (nodeLogStack.length >= 3)){
+				// 	//remove the node from log
+				// 	nodeLogStack.pop();
+				// }
+				var lenToRemove = nodeLogStack.length - preIdx - 1
+				for(var i=0; i<lenToRemove;i++){
+					nodeLogStack.pop();
+				}
+
+				node.style("fill", function(d){
+					var isclicked = include(nodeLogStack, d.functions);
+					return isclicked != -1 ? "red" : "steelblue";
+				});
+			}
+			else{
+				// push the clicked node into the stack nodeLogStack
+				nodeLogStack.push(d.functions);
+				//d.style("fill","red");
+
+				// change the color of the clicked node to red
+				node.style("fill", function(d){
+					var isclicked = include(nodeLogStack, d.functions);
+					return isclicked != -1 ? "red" : "steelblue";
+				});
+			}
+				//node.style("fill", "red");
+				
+				//links.style("opacity", function(o){
+				//	if(include(nodeLogStack, o.functions) != -1){
+				//		return d.index == o.source.index | d.index == o.target.index ? 1 : .1 ;
+				//	}
+				//});
+				
+				//this will add the nodes which are stacked into the middle panel displayed in screen
+			for(var i=0;i<nodeLogStack.length;i++){
+				textToLog+="<br/>"+nodeLogStack[i];
+			}
+			// add transition to elements so that it look good
+			log.transition()		
+					.duration(200)		
+					.style("opacity", .9);		
+			log.style("right", window.innerWidth/4)		
+					.style("top", "50px")
+					.style("height", window.innerHeight *0.9)
+					.style("width", window.innerWidth/5);
+			log.html(textToLog)	
+			
+			// change the flag
+			toggle = 0;
+		}
+		// this else is for the log status
+		else{
+			node.style("fill","steelblue");
+			toggle = 1;
+			nodeLogStack = [];
+			log.transition()
+			.duration(500)
+			.style("opacity",0);
+		}
+	} 
+	// the node is clicked second time and thus change its visual attribute to normal
+	else {
+		//Put them back to opacity=1
+		node.style("opacity", 1);
+		link.style("opacity", .5);
+		text.style("opacity", 1);
+		link.style("stroke","#999");
+		div.transition()		
+		.duration(500)		
+		.style("opacity", 0);
+		toggle = 0;
+	}
+}
+</script>
+</body>
+</html>
