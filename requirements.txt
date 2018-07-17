@@ -1,0 +1,3 @@
+tulip-python
+flask
+networkx
