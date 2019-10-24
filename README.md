@@ -1,5 +1,5 @@
 # Airbus-Internship-2018
-Call Graphs Visualization Platform for Embedded Software Call-Graph</br>
+Call Graph Visualization Platform for Embedded Software Call-Graph</br>
 This visualizer application is designed for any node-link graph based on D3.js 
 ## Setup
 Run the following:
