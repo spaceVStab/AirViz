@@ -10,3 +10,6 @@ $ python app.py
 ```
 The application is running at localhost:5000 </br>
 As of now the application uses a dot (graphviz) type file which may not be the one your graph might be in. Soon the one which uses json files as the input graph file will be committed. 
+
+`TODO`
+- Add graph flexibility
